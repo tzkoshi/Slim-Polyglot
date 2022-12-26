@@ -2,11 +2,15 @@
 
 namespace McAskill\Slim\Polyglot;
 
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Server\MiddlewareInterface;
+use Psr\Http\Server\RequestHandlerInterface;
 use McAskill\Slim\Polyglot\Exception\InvalidArgumentException;
 use McAskill\Slim\Polyglot\Exception\RuntimeException;
 use Negotiation\LanguageNegotiator as Negotiator;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\ResponseInterface;
+use Slim\Psr7\Response;
 
 /**
  * Polyglot Middleware
@@ -39,7 +43,7 @@ use Psr\Http\Message\ResponseInterface;
  *
  * @link https://github.com/oscarotero/psr7-middlewares/blob/master/src/Middleware/LanguageNegotiator.php
  */
-class Polyglot
+class Polyglot implements MiddlewareInterface
 {
     /**
      * @const Matches only the {@see self::$languages supported languages}.
@@ -261,13 +265,13 @@ class Polyglot
      * If no language is detected from the route, it's retrieved
      * from the client's Accept-Language header.
      *
-     * @param  RequestInterface  $request  PSR7 request object
-     * @param  ResponseInterface $response PSR7 response object
-     * @param  callable          $next     Next callable middleware
+     * @param ServerRequestInterface $request PSR7 request object
+     * @param RequestHandlerInterface $handler PSR15 request handler
      *
      * @return ResponseInterface PSR7 response object
      */
-    public function __invoke(ServerRequestInterface $request, ResponseInterface $response, callable $next)
+
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         /** @var callable[]|null A call stack to send the resolved language to. */
         $callbacks = $this->getCallbacks();
@@ -282,6 +286,7 @@ class Polyglot
          *               will move on the next middleware or will be interrupted.
          */
         $redirected = false;
+        $response = new Response();
 
         /** @var string For manipulation later on in this method. */
         $uri = $request->getUri()->withUserInfo('');
@@ -306,7 +311,7 @@ class Polyglot
             /** If the language is required, make sure the URI has it. */
             if ($this->isLanguageRequiredInUri()) {
                 $path       = $this->prependLanguage($uri->getPath(), $language);
-                $response   = $response->withRedirect($uri->withPath($path), 303);
+                $response   = $response->withHeader('Location', $uri->withPath($path))->withStatus(303);
                 $redirected = true;
             }
             else {
@@ -333,7 +338,7 @@ class Polyglot
             $language = $fallback;
             $request  = $request->withAttribute('language-path', $fallback);
 
-            $response   = $response->withRedirect($uri->withPath($path), 303);
+            $response   = $response->withHeader('Location', $uri->withPath($path))->withStatus(303);
             $redirected = true;
         }
 
@@ -342,7 +347,9 @@ class Polyglot
 
             // Empty path redirect to path '/'
             if (empty($path)) {
-                $response   = $response->withRedirect($uri->withPath($this->prependLanguage('/', $language)), 303);
+                $response = $response
+                    ->withHeader('Location', $uri->withPath($this->prependLanguage('/', $language)))
+                    ->withStatus(303);
             }
 
             $request = $request->withUri($uri->withPath($path, $language));
@@ -350,7 +357,6 @@ class Polyglot
 
         /** Assign the language to the request, response, client session, and third-party service. */
         $request  = $request->withAttribute('language-current', $language);
-        $response = $response->withHeader('Content-Language', $language);
         $this->setUserLanguage($language);
 
         if (count($callbacks)) {
@@ -359,7 +365,8 @@ class Polyglot
             }
         }
 
-        $response = $next($request, $response);
+        $response = $handler->handle($request);
+        $response = $response->withHeader('Content-Language', $language);
 
         /** If the language is required, make sure the URI has it on redirect. */
         if ($this->isLanguageRequiredInUri() && $response->isRedirect()) {
