@@ -311,7 +311,7 @@ class Polyglot implements MiddlewareInterface
             /** If the language is required, make sure the URI has it. */
             if ($this->isLanguageRequiredInUri()) {
                 $path       = $this->prependLanguage($uri->getPath(), $language);
-                $response   = $response->withHeader('Location', $uri->withPath($path))->withStatus(303);
+                $response   = $response->withHeader('Location', (string)$uri->withPath($path))->withStatus(303);
                 $redirected = true;
             }
             else {
@@ -338,7 +338,7 @@ class Polyglot implements MiddlewareInterface
             $language = $fallback;
             $request  = $request->withAttribute('language-path', $fallback);
 
-            $response   = $response->withHeader('Location', $uri->withPath($path))->withStatus(303);
+            $response   = $response->withHeader('Location', (string)$uri->withPath($path))->withStatus(303);
             $redirected = true;
         }
 
